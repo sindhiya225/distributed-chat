@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DistributedChat — Live Cluster Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg: #070b14;
+  --surface: #0d1424;
+  --surface2: #111d33;
+  --border: #1e2d4a;
+  --accent: #00e5ff;
+  --accent2: #7c3aed;
+  --accent3: #10b981;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+  --leader: #fbbf24;
+  --text: #e2e8f0;
+  --text-dim: #64748b;
+  --text-mid: #94a3b8;
+  --mono: 'Space Mono', monospace;
+  --sans: 'Syne', sans-serif;
+  --glow: 0 0 20px rgba(0,229,255,0.3);
+  --glow-leader: 0 0 30px rgba(251,191,36,0.5);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html, body { height: 100%; width: 100%; overflow: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  grid-template-columns: 1fr 380px;
+}
+
+/* ── Header ── */
+header {
+  grid-column: 1 / -1;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+}
+header::before {
+  content:'';
+  position:absolute; inset:0;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.03), transparent);
+  animation: scanline 4s linear infinite;
+}
+@keyframes scanline { from{transform:translateX(-100%)} to{transform:translateX(100%)} }
+
+.logo {
+  font-family: var(--sans);
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.5px;
+  color: var(--accent);
+  text-shadow: var(--glow);
+}
+.logo span { color: var(--text-dim); font-weight: 400; }
+
+.status-bar {
+  display: flex;
+  gap: 20px;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  align-items: center;
+}
+.status-pill {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.dot.alive { background: var(--accent3); box-shadow: 0 0 6px var(--accent3); animation: pulse 2s ease-in-out infinite; }
+.dot.leader { background: var(--leader); box-shadow: 0 0 8px var(--leader); }
+.dot.crashed { background: var(--danger); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+#launch-btn {
+  margin-left: 8px;
+  padding: 8px 20px;
+  background: linear-gradient(135deg, var(--accent2), #4f46e5);
+  border: none; border-radius: 8px;
+  color: #fff; font-family: var(--sans); font-weight: 700; font-size: 13px;
+  cursor: pointer; transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+#launch-btn:hover { transform:translateY(-1px); box-shadow: 0 4px 20px rgba(124,58,237,0.5); }
+#launch-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ── Visualizer Panel ── */
+#visualizer {
+  grid-row: 2;
+  grid-column: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+  min-height: 0;
+  min-width: 0;
+}
+
+#cluster-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+}
+
+/* Server nodes */
+.server-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: filter 0.3s;
+  user-select: none;
+  pointer-events: auto;
+  z-index: 5;
+}
+.server-node:hover { filter: brightness(1.2); }
+
+.node-ring {
+  position: relative;
+  width: 90px; height: 90px;
+}
+.node-ring svg {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+}
+.node-body {
+  position: absolute;
+  inset: 8px;
+  background: var(--surface2);
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+  transition: all 0.3s;
+}
+.node-id {
+  font-family: var(--mono);
+  font-size: 16px; font-weight: 700;
+  color: var(--accent);
+}
+.node-port {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-dim);
+}
+.node-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-mid);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+.node-crown {
+  position: absolute;
+  top: -20px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 22px;
+  animation: float 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px var(--leader));
+}
+@keyframes float { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(-5px)} }
+
+.node-hb {
+  position: absolute;
+  bottom: -28px; left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent3);
+  opacity: 0;
+  transition: opacity 0.3s;
+  white-space: nowrap;
+}
+.node-hb.visible { opacity: 1; }
+
+.node-action-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.crash-btn { border-color: var(--danger); color: var(--danger); }
+.crash-btn:hover { background: rgba(239,68,68,0.15); }
+.restart-btn { border-color: var(--accent3); color: var(--accent3); }
+.restart-btn:hover { background: rgba(16,185,129,0.15); }
+
+/* Status styles per state */
+.server-node[data-status="running"] .node-body {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0,229,255,0.1), inset 0 0 20px rgba(0,229,255,0.05);
+}
+.server-node[data-status="leader"] .node-body {
+  border-color: var(--leader);
+  box-shadow: var(--glow-leader), inset 0 0 20px rgba(251,191,36,0.1);
+}
+.server-node[data-status="crashed"] .node-body {
+  border-color: var(--danger);
+  opacity: 0.5;
+  background: rgba(239,68,68,0.05);
+}
+.server-node[data-status="crashed"] .node-id { color: var(--danger); }
+.server-node[data-status="stopped"] .node-body { opacity: 0.3; }
+.server-node[data-status="starting"] .node-body {
+  border-color: var(--warn);
+  animation: blinkBorder 0.5s ease-in-out infinite alternate;
+}
+@keyframes blinkBorder { from{box-shadow:none} to{box-shadow:0 0 15px rgba(245,158,11,0.4)} }
+
+/* Heartbeat ring animation */
+.hb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent3);
+  opacity: 0;
+  transform: scale(1);
+  pointer-events: none;
+}
+.hb-ring.beat {
+  animation: hbRing 1s ease-out forwards;
+}
+@keyframes hbRing {
+  0%   { opacity:0.8; transform:scale(1); }
+  100% { opacity:0; transform:scale(1.6); }
+}
+
+/* Replication particle */
+.rep-particle {
+  position: absolute;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Legend */
+#legend {
+  position: absolute;
+  bottom: 20px; left: 20px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: rgba(13,20,36,0.85);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  backdrop-filter: blur(10px);
+}
+.legend-row {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 10px; color: var(--text-mid);
+}
+.legend-color {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+}
+
+/* ── Event Log ── */
+#event-log {
+  position: absolute;
+  top: 16px; left: 16px; right: 16px;
+  max-height: 120px;
+  overflow: hidden;
+  display: flex; flex-direction: column; gap: 4px;
+  pointer-events: none;
+}
+.log-entry {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(13,20,36,0.9);
+  border-left: 3px solid var(--border);
+  backdrop-filter: blur(5px);
+  animation: slideIn 0.3s ease-out;
+  display: flex; align-items: center; gap: 8px;
+}
+@keyframes slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+.log-entry.info    { border-color: var(--accent); }
+.log-entry.success { border-color: var(--accent3); }
+.log-entry.error   { border-color: var(--danger); }
+.log-entry.warn    { border-color: var(--warn); }
+.log-entry.leader  { border-color: var(--leader); }
+.log-ts { color: var(--text-dim); }
+.log-msg { color: var(--text); }
+
+/* ── Chat Panel ── */
+#chat-panel {
+  grid-row: 2;
+  grid-column: 2;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.chat-header-title {
+  font-weight: 700; font-size: 14px;
+  letter-spacing: 0.5px;
+}
+.chat-header-sub {
+  font-family: var(--mono);
+  font-size: 10px; color: var(--text-dim);
+  margin-top: 2px;
+}
+.msg-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.2);
+  padding: 2px 8px; border-radius: 10px;
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.msg-bubble {
+  display: flex; flex-direction: column; gap: 3px;
+  animation: msgIn 0.25s ease-out;
+  max-width: 100%;
+}
+@keyframes msgIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+.msg-meta {
+  display: flex; align-items: center; gap: 8px;
+}
+.msg-author {
+  font-family: var(--sans);
+  font-size: 11px; font-weight: 700;
+  color: var(--accent);
+}
+.msg-author.own { color: var(--accent2); }
+.msg-system .msg-author { color: var(--text-dim); }
+.msg-ts {
+  font-family: var(--mono);
+  font-size: 9px; color: var(--text-dim);
+}
+.msg-clock {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--accent3);
+  background: rgba(16,185,129,0.1);
+  border: 1px solid rgba(16,185,129,0.2);
+  padding: 1px 5px; border-radius: 3px;
+  margin-left: auto;
+}
+.msg-content {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface2);
+  padding: 8px 12px;
+  border-radius: 0 10px 10px 10px;
+  border: 1px solid var(--border);
+  word-break: break-word;
+}
+.msg-bubble.own .msg-content {
+  background: rgba(124,58,237,0.15);
+  border-color: rgba(124,58,237,0.3);
+  border-radius: 10px 0 10px 10px;
+}
+.msg-system .msg-content {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-style: italic;
+  padding: 2px 0;
+}
+.msg-server-tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Username prompt */
+#username-bar {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; gap: 8px; align-items: center;
+}
+#username-bar label {
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  white-space: nowrap;
+}
+#username-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono); font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#username-input:focus { border-color: var(--accent); }
+
+/* Input */
+#input-area {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 10px;
+}
+#msg-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--sans); font-size: 13px;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  resize: none;
+}
+#msg-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,229,255,0.08); }
+#msg-input:disabled { opacity: 0.4; cursor: not-allowed; }
+#send-btn {
+  padding: 10px 18px;
+  background: linear-gradient(135deg, var(--accent2), #4f46e5);
+  border: none; border-radius: 8px;
+  color: #fff; font-family: var(--sans); font-weight: 700;
+  font-size: 13px; cursor: pointer;
+  transition: all 0.2s;
+}
+#send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(124,58,237,0.4); }
+#send-btn:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+
+/* -- Cluster Dead Overlay -- */
+#cluster-dead-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(7, 11, 20, 0.93);
+  backdrop-filter: blur(6px);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  animation: fadeInOverlay 0.5s ease-out;
+}
+#cluster-dead-overlay.visible { display: flex; }
+@keyframes fadeInOverlay { from{opacity:0} to{opacity:1} }
+.overlay-icon { font-size: 56px; animation: flickerIcon 1.5s ease-in-out infinite alternate; }
+@keyframes flickerIcon { 0%{opacity:1;transform:scale(1)} 60%{opacity:0.4;transform:scale(0.97)} 100%{opacity:1;transform:scale(1.03)} }
+.overlay-title { font-family: var(--sans); font-size: 26px; font-weight: 800; color: var(--danger); letter-spacing: -0.5px; text-shadow: 0 0 30px rgba(239,68,68,0.6); }
+.overlay-sub { font-family: var(--mono); font-size: 12px; color: var(--text-mid); text-align: center; line-height: 1.8; max-width: 340px; }
+.overlay-sub b { color: var(--warn); }
+.overlay-facts { display: flex; flex-direction: column; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 24px; max-width: 360px; width: 100%; }
+.overlay-fact { font-family: var(--mono); font-size: 11px; color: var(--text-mid); display: flex; gap: 10px; align-items: flex-start; line-height: 1.5; }
+.overlay-fact b { color: var(--danger); flex-shrink: 0; }
+#restart-all-btn { padding: 12px 32px; background: linear-gradient(135deg, var(--danger), #b91c1c); border: none; border-radius: 10px; color: #fff; font-family: var(--sans); font-weight: 700; font-size: 14px; cursor: pointer; letter-spacing: 0.5px; transition: all 0.2s; box-shadow: 0 4px 20px rgba(239,68,68,0.4); }
+#restart-all-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(239,68,68,0.5); }
+
+/* Topology lines drawn on canvas */
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">Distributed<span>Chat</span></div>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);border-left:1px solid var(--border);padding-left:16px;">
+    Bully Election · Lamport Clocks · Active Replication · Heartbeat FD
+  </div>
+  <div class="status-bar">
+    <div class="status-pill">
+      <div class="dot" id="ws-dot"></div>
+      <span id="ws-label" style="color:var(--text-dim)">disconnected</span>
+    </div>
+    <div class="status-pill">
+      <div class="dot leader" id="leader-dot" style="display:none"></div>
+      <span id="leader-label" style="color:var(--text-dim)">no leader</span>
+    </div>
+    <button id="launch-btn" onclick="launchServers()">▶ Launch Cluster</button>
+  </div>
+</header>
+
+<!-- Visualizer -->
+<div id="visualizer">
+  <canvas id="cluster-canvas"></canvas>
+
+  <!-- Server nodes injected by JS -->
+
+
+  <!-- Cluster Dead Overlay -->
+  <div id="cluster-dead-overlay">
+    <div class="overlay-icon">X</div>
+    <div class="overlay-title">CLUSTER OFFLINE</div>
+    <div class="overlay-sub">All 3 servers have crashed.<br/><b>This is a total system failure.</b><br/>No messages can be sent or received.</div>
+    <div class="overlay-facts">
+      <div class="overlay-fact"><b>!</b> CAP Theorem: System lost Availability + Consistency</div>
+      <div class="overlay-fact"><b>!</b> Message log is preserved in memory (not lost)</div>
+      <div class="overlay-fact"><b>!</b> In production: use persistent storage + auto-restart</div>
+      <div class="overlay-fact"><b>!</b> Bully election needs at least 1 server alive to work</div>
+    </div>
+    <button id="restart-all-btn" onclick="restartAll()">Restart All Servers</button>
+  </div>
+
+  <div id="event-log"></div>
+
+  <div id="legend">
+    <div class="legend-row"><div class="legend-color" style="background:var(--accent)"></div>Running server</div>
+    <div class="legend-row"><div class="legend-color" style="background:var(--leader)"></div>Leader (Bully winner)</div>
+    <div class="legend-row"><div class="legend-color" style="background:var(--danger)"></div>Crashed server</div>
+    <div class="legend-row"><div class="legend-color" style="background:var(--accent3)"></div>Heartbeat pulse</div>
+    <div class="legend-row" style="margin-top:4px">
+      <div style="width:30px;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:1px"></div>
+      <span>Replication packet</span>
+    </div>
+  </div>
+</div>
+
+<!-- Chat Panel -->
+<div id="chat-panel">
+  <div class="chat-header">
+    <div>
+      <div class="chat-header-title">💬 Live Chat</div>
+      <div class="chat-header-sub">Messages replicated across all servers</div>
+    </div>
+    <div class="msg-count" id="msg-count">0 msgs</div>
+  </div>
+
+  <div id="username-bar">
+    <label>YOUR NAME →</label>
+    <input id="username-input" type="text" value="Alice" maxlength="20" placeholder="Enter username"/>
+  </div>
+
+  <div id="messages"></div>
+
+  <div id="input-area">
+    <input id="msg-input" placeholder="Type a message… (launch cluster first)" disabled/>
+    <button id="send-btn" onclick="sendMessage()" disabled>Send</button>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let ws = null;
+let clusterLaunched = false;
+const serverConfig = [
+  { id: "S3", port: 9001 },
+  { id: "S2", port: 9002 },
+  { id: "S1", port: 9003 },
+];
+const serverState = { S3: "stopped", S2: "stopped", S1: "stopped" };
+let leaderID = null;
+const nodeEls = {};
+const nodePositions = {};
+
+// ── Canvas setup ───────────────────────────────────────────────────────────
+const canvas = document.getElementById("cluster-canvas");
+const ctx = canvas.getContext("2d");
+let animFrame;
+
+function resizeCanvas() {
+  const viz = document.getElementById("visualizer");
+  canvas.width  = viz.clientWidth;
+  canvas.height = viz.clientHeight;
+  placeNodes();
+  drawLines();
+}
+
+function placeNodes() {
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const r = Math.min(W, H) * 0.28;
+  const angles = [-Math.PI/2, -Math.PI/2 + (2*Math.PI/3), -Math.PI/2 + (4*Math.PI/3)];
+  serverConfig.forEach((s, i) => {
+    nodePositions[s.id] = {
+      x: cx + r * Math.cos(angles[i]),
+      y: cy + r * Math.sin(angles[i]),
+    };
+    if (nodeEls[s.id]) {
+      nodeEls[s.id].style.left = nodePositions[s.id].x + "px";
+      nodeEls[s.id].style.top  = nodePositions[s.id].y + "px";
+    }
+  });
+  drawLines();
+}
+
+function drawLines() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const ids = Object.keys(nodePositions);
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i+1; j < ids.length; j++) {
+      const a = nodePositions[ids[i]], b = nodePositions[ids[j]];
+      const aAlive = serverState[ids[i]] === "running" || serverState[ids[i]] === "leader";
+      const bAlive = serverState[ids[j]] === "running" || serverState[ids[j]] === "leader";
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = (aAlive && bAlive) ? "rgba(0,229,255,0.15)" : "rgba(255,255,255,0.04)";
+      ctx.lineWidth = (aAlive && bAlive) ? 1.5 : 1;
+      if (!aAlive || !bAlive) ctx.setLineDash([4, 6]);
+      else ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+window.addEventListener("resize", resizeCanvas);
+
+// ── Build server nodes ─────────────────────────────────────────────────────
+function buildNodes() {
+  const viz = document.getElementById("visualizer");
+  serverConfig.forEach(s => {
+    const el = document.createElement("div");
+    el.className = "server-node";
+    el.id = `node-${s.id}`;
+    el.dataset.status = "stopped";
+    el.dataset.id = s.id;
+    el.innerHTML = `
+      <div class="node-ring">
+        <div class="hb-ring" id="hbring-${s.id}"></div>
+        <div class="node-body">
+          <span class="node-id">${s.id}</span>
+          <span class="node-port">:${s.port}</span>
+        </div>
+      </div>
+      <div class="node-label" id="label-${s.id}">offline</div>
+      <div class="node-hb" id="hb-${s.id}">💓 alive</div>
+    `;
+    viz.appendChild(el);
+    nodeEls[s.id] = el;
+  });
+  resizeCanvas();
+}
+
+function updateNode(id, status, isLeader) {
+  const el = nodeEls[id];
+  if (!el) return;
+  const st = isLeader ? "leader" : status;
+  el.dataset.status = st;
+  serverState[id] = status;
+
+  const label = document.getElementById(`label-${id}`);
+  label.textContent = isLeader ? "👑 leader" : status;
+
+  // Crown
+  let crown = el.querySelector(".node-crown");
+  if (isLeader && !crown) {
+    crown = document.createElement("div");
+    crown.className = "node-crown";
+    crown.textContent = "👑";
+    el.querySelector(".node-ring").appendChild(crown);
+  } else if (!isLeader && crown) {
+    crown.remove();
+  }
+
+  // Action button
+  let btn = el.querySelector(".node-action-btn");
+  if (btn) btn.remove();
+  if (status === "running") {
+    btn = document.createElement("button");
+    btn.className = "node-action-btn crash-btn";
+    btn.textContent = "💥 CRASH";
+    btn.onclick = (e) => { e.stopPropagation(); crashServer(id); };
+    el.appendChild(btn);
+  } else if (status === "crashed") {
+    btn = document.createElement("button");
+    btn.className = "node-action-btn restart-btn";
+    btn.textContent = "↺ RESTART";
+    btn.onclick = (e) => { e.stopPropagation(); restartServer(id); };
+    el.appendChild(btn);
+  }
+  drawLines();
+}
+
+// ── Heartbeat animation ────────────────────────────────────────────────────
+function doHeartbeat(ids) {
+  ids.forEach(id => {
+    const ring = document.getElementById(`hbring-${id}`);
+    const label = document.getElementById(`hb-${id}`);
+    if (ring) {
+      ring.classList.remove("beat");
+      void ring.offsetWidth;
+      ring.classList.add("beat");
+    }
+    if (label) {
+      label.classList.add("visible");
+      setTimeout(() => label.classList.remove("visible"), 900);
+    }
+  });
+}
+
+// ── Replication animation ──────────────────────────────────────────────────
+function animateReplication(fromId, toIds) {
+  const viz = document.getElementById("visualizer");
+  const from = nodePositions[fromId];
+  if (!from) return;
+  toIds.forEach((toId, i) => {
+    const to = nodePositions[toId];
+    if (!to) return;
+    setTimeout(() => {
+      const particle = document.createElement("div");
+      particle.className = "rep-particle";
+      particle.style.left = from.x + "px";
+      particle.style.top  = from.y + "px";
+      viz.appendChild(particle);
+
+      const start = performance.now();
+      const duration = 700;
+
+      function step(now) {
+        const t = Math.min((now - start) / duration, 1);
+        const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+        const x = from.x + (to.x - from.x) * ease;
+        const y = from.y + (to.y - from.y) * ease;
+        particle.style.left = x + "px";
+        particle.style.top  = y + "px";
+        particle.style.opacity = t < 0.9 ? "1" : String(1 - (t-0.9)/0.1);
+        if (t < 1) requestAnimationFrame(step);
+        else particle.remove();
+      }
+      requestAnimationFrame(step);
+    }, i * 100);
+  });
+}
+
+// ── Event log ─────────────────────────────────────────────────────────────
+const logEntries = [];
+function addLog(msg, level = "info") {
+  const container = document.getElementById("event-log");
+  const ts = new Date().toLocaleTimeString("en", {hour12:false, hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  const el = document.createElement("div");
+  el.className = `log-entry ${level}`;
+  el.innerHTML = `<span class="log-ts">${ts}</span><span class="log-msg">${msg}</span>`;
+  container.insertBefore(el, container.firstChild);
+  logEntries.push(el);
+  if (logEntries.length > 4) {
+    const old = logEntries.shift();
+    old.remove();
+  }
+}
+
+// ── Chat ───────────────────────────────────────────────────────────────────
+let msgCount = 0;
+function appendMessage(m, own = false) {
+  const container = document.getElementById("messages");
+  const isSystem = m.sender_id === "SYSTEM" || m.username === "SYSTEM";
+  const div = document.createElement("div");
+  div.className = `msg-bubble${own ? " own" : ""}${isSystem ? " msg-system" : ""}`;
+  if (!isSystem) {
+    div.innerHTML = `
+      <div class="msg-meta">
+        <span class="msg-author${own ? " own" : ""}">${m.username}</span>
+        <span class="msg-ts">${m.ts || ""}</span>
+        <span class="msg-clock">lc=${m.clock}</span>
+      </div>
+      <div class="msg-content">${escHtml(m.content)}</div>
+      <div class="msg-server-tag">via ${m.server || "?"}</div>
+    `;
+  } else {
+    div.innerHTML = `<div class="msg-content">${escHtml(m.content)}</div>`;
+  }
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  msgCount++;
+  document.getElementById("msg-count").textContent = `${msgCount} msgs`;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
+function connectWS() {
+  ws = new WebSocket("ws://localhost:8765");
+  ws.onopen = () => {
+    document.getElementById("ws-dot").className = "dot alive";
+    document.getElementById("ws-label").textContent = "bridge connected";
+    document.getElementById("ws-label").style.color = "var(--accent3)";
+  };
+  ws.onclose = () => {
+    document.getElementById("ws-dot").className = "dot crashed";
+    document.getElementById("ws-label").textContent = "bridge offline";
+    document.getElementById("ws-label").style.color = "var(--danger)";
+    setTimeout(connectWS, 2000);
+  };
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    handleMessage(data);
+  };
+}
+
+function handleMessage(data) {
+  switch (data.type) {
+    case "cluster_state":
+      leaderID = data.leader;
+      data.servers.forEach(s => {
+        updateNode(s.id, s.status, s.is_leader);
+      });
+      checkClusterDead();
+      if (leaderID) {
+        document.getElementById("leader-dot").style.display = "block";
+        document.getElementById("leader-label").textContent = `Leader: ${leaderID}`;
+        document.getElementById("leader-label").style.color = "var(--leader)";
+      }
+      break;
+
+    case "log":
+      addLog(data.msg, data.level || "info");
+      break;
+
+    case "heartbeat":
+      doHeartbeat(data.servers);
+      break;
+
+    case "replication":
+      animateReplication(data.from, data.to);
+      break;
+
+    case "new_message":
+      appendMessage(data.message, data.own || false);
+      break;
+
+    case "history":
+      document.getElementById("messages").innerHTML = "";
+      msgCount = 0;
+      data.messages.forEach(m => appendMessage(m, false));
+      break;
+
+    case "server_crash":
+      updateNode(data.server_id, "crashed", false);
+      checkClusterDead();
+      addLog(`💥 ${data.server_id} is DOWN`, "error");
+      break;
+
+    case "new_leader":
+      leaderID = data.leader_id;
+      serverConfig.forEach(s => {
+        if (serverState[s.id] === "running") {
+          updateNode(s.id, "running", s.id === leaderID);
+        }
+      });
+      document.getElementById("leader-label").textContent = `Leader: ${leaderID}`;
+      addLog(`👑 New leader elected: ${leaderID}`, "leader");
+      break;
+  }
+}
+
+// ── Actions ────────────────────────────────────────────────────────────────
+function launchServers() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    addLog("Bridge not connected. Start bridge.py first.", "error");
+    return;
+  }
+  document.getElementById("launch-btn").disabled = true;
+  document.getElementById("launch-btn").textContent = "Launching...";
+  ws.send(JSON.stringify({ action: "launch" }));
+  clusterLaunched = true;
+  setTimeout(() => {
+    document.getElementById("msg-input").disabled = false;
+    document.getElementById("send-btn").disabled = false;
+    document.getElementById("msg-input").placeholder = "Type a message and press Enter...";
+  }, 5000);
+}
+
+function crashServer(id) {
+  if (!ws) return;
+  ws.send(JSON.stringify({ action: "crash", server_id: id }));
+}
+
+function restartServer(id) {
+  if (!ws) return;
+  ws.send(JSON.stringify({ action: "restart", server_id: id }));
+}
+
+function sendMessage() {
+  const input = document.getElementById("msg-input");
+  const username = document.getElementById("username-input").value.trim() || "Anonymous";
+  const content = input.value.trim();
+  if (!content || !ws) return;
+  ws.send(JSON.stringify({ action: "send", username, content }));
+  input.value = "";
+}
+
+document.getElementById("msg-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+
+// -- Cluster-wide failure detection --
+function checkClusterDead() {
+  const allDead = serverConfig.every(s => serverState[s.id] === "crashed" || serverState[s.id] === "stopped");
+  const overlay = document.getElementById("cluster-dead-overlay");
+  const input = document.getElementById("msg-input");
+  const sendBtn = document.getElementById("send-btn");
+  if (allDead && clusterLaunched) {
+    overlay.classList.add("visible");
+    input.disabled = true;
+    input.placeholder = "Cluster offline - restart servers to resume";
+    sendBtn.disabled = true;
+    document.getElementById("leader-label").textContent = "no leader";
+    document.getElementById("leader-label").style.color = "var(--danger)";
+    document.getElementById("leader-dot").style.display = "none";
+    addLog("TOTAL CLUSTER FAILURE - all servers down", "error");
+  } else {
+    overlay.classList.remove("visible");
+  }
+}
+
+function restartAll() {
+  if (!ws) return;
+  document.getElementById("cluster-dead-overlay").classList.remove("visible");
+  ["S3","S2","S1"].forEach((id, i) => {
+    setTimeout(() => {
+      ws.send(JSON.stringify({ action: "restart", server_id: id }));
+    }, i * 800);
+  });
+  setTimeout(() => {
+    document.getElementById("msg-input").disabled = false;
+    document.getElementById("msg-input").placeholder = "Type a message and press Enter...";
+    document.getElementById("send-btn").disabled = false;
+    addLog("Cluster recovering - re-electing leader...", "warn");
+  }, 3500);
+}
+
+buildNodes();
+connectWS();
+addLog("Open bridge.py first, then click ▶ Launch Cluster", "info");
+</script>
+</body>
+</html>
