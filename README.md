@@ -1,10 +1,10 @@
-# 🌐 Distributed Chat Application with Fault Tolerance
+#  Distributed Chat Application with Fault Tolerance
 
 A production-grade distributed messaging system built from scratch in Python, implementing core distributed computing concepts: leader election, message replication, Lamport logical clocks, and fault-tolerant failover.
 
 ---
 
-## 📐 Architecture
+##  Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -36,7 +36,7 @@ Crash S3:  [S3 DEAD]  ─── S2 ─── S1
 
 ---
 
-## 🧠 Distributed Computing Concepts Applied
+##  Distributed Computing Concepts Applied
 
 | Concept | Implementation |
 |---------|---------------|
@@ -50,7 +50,7 @@ Crash S3:  [S3 DEAD]  ─── S2 ─── S1
 
 ---
 
-## 🔬 Algorithm Details
+##  Algorithm Details
 
 ### Bully Algorithm (Leader Election)
 1. Any server can start an election by sending `ELECTION` to all higher-ID servers
@@ -81,7 +81,7 @@ Crash S3:  [S3 DEAD]  ─── S2 ─── S1
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Requirements
 - Python 3.9+
@@ -126,9 +126,16 @@ This script will:
 - Show re-election happening in real time
 - Restart the crashed server to demonstrate sync
 
+### 4. Web Application
+
+```bash
+python3 bridge.py
+-- open index.html from directory
+```
+
 ---
 
-## 💥 Manual Fault Tolerance Demo
+##  Manual Fault Tolerance Demo
 
 1. Start all 3 servers and 2+ clients
 2. Send some messages — note the `[lc=N]` Lamport clock values
@@ -140,7 +147,7 @@ This script will:
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 distributed-chat/
@@ -151,12 +158,25 @@ distributed-chat/
 ├── client/
 │   └── client.py          # Terminal client with auto-reconnect
 ├── demo.py                # Automated crash demo script
+├── index.html
+├── bridge.py
 └── README.md
 ```
 
 ---
 
-## 🎓 Academic Concepts Covered
+### Screenshots
+
+<img width="1919" height="864" alt="image" src="https://github.com/user-attachments/assets/aff6c6d4-46a7-4e0c-bbc0-ecb53ed18366" />
+
+<img width="1919" height="860" alt="image" src="https://github.com/user-attachments/assets/93716135-a7a0-44ae-8d29-617af1802e9e" />
+
+<img width="1287" height="792" alt="image" src="https://github.com/user-attachments/assets/e5911789-340b-4146-9442-c6dc0347795e" />
+
+---
+ 
+
+##  Academic Concepts Covered
 
 - **CAP Theorem**: This system prioritizes **Availability + Partition Tolerance** (AP). During an election, the system stays available; strict consistency is eventual.
 - **Replication**: Active (eager) replication — all servers receive every message immediately.
@@ -165,7 +185,7 @@ distributed-chat/
 
 ---
 
-## 🔧 Extending the Project
+##  Extending the Project
 
 - Add **Raft or Paxos** for strong consistency (replace replication logic)
 - Add **vector clocks** for causal ordering across clients
